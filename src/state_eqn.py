@@ -4,6 +4,10 @@ import jax.numpy as jnp
 # In astro-literature, they use double precision.
 jax.config.update("jax_enable_x64", True)
 
+################################################################################
+# Solving Kepler's Equation smartly by implementing `jaxoplanets`
+# See https://jax.exoplanet.codes/en/latest/tutorials/core-from-scratch/.
+################################################################################
 def kepler_starter(mean_anom, ecc):
     ome = 1 - ecc
     M2 = jnp.square(mean_anom)
@@ -54,10 +58,34 @@ def kepler_solver_impl(mean_anom, ecc):
 
     return ecc_anom
 
-def velocity(t, period, eccentricity, omega, phi0, K, v0):
+################################################################################
+# State Equation
+################################################################################
+def velocity(t: float, 
+             period: float, 
+             eccentricity: float, 
+             omega: float, 
+             phi0: float, 
+             K: float,
+             v0: float) -> float:
     """
+    Calculate velocity at time `t` for a given period, eccentricity, omega, phi0, K, and v0.
+    Using equation (1-4) in https://arxiv.org/pdf/1610.07602
+
+    Args:
+        - t: time
+        - period: period of the orbit
+        - eccentricity: eccentricity of the orbit
+        - omega: argument of periastron
+        - phi0: phase offset
+        - K: semi-amplitude of the velocity
+        - v0: velocity offset
+
+    Returns:
+        - velocity at time `t`
     """
-    mean_anom = (2 * jnp.pi * t / period) + phi0
+    mean_anom = (2 * jnp.pi * t / period) + phi0 
+
     E = kepler_solver_impl(mean_anom, eccentricity)
 
     f = jnp.arccos((jnp.cos(E) - eccentricity) / (1 - eccentricity * jnp.cos(E)))
