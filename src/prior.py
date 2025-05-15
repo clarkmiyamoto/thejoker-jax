@@ -7,9 +7,9 @@ Implementaiton of priors. See equations (5-9) in https://arxiv.org/pdf/1610.0760
 '''
 
 def sampleLogPeriod(key: jax.random.PRNGKey, 
-               batch_size: int,
-               logP_min: float,
-               logP_max: float) -> jnp.ndarray:
+                    batch_size: int,
+                    logP_min: float,
+                    logP_max: float,) -> jnp.ndarray:
     '''
     Sample log period from a uniform distribution.
 
