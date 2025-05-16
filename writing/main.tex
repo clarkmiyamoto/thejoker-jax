@@ -1,0 +1,86 @@
+%%% Document Formatting
+\documentclass[12pt,fleqn]{article}
+\usepackage[a4paper,
+            bindingoffset=0.2in,
+            left=0.75in,
+            right=0.75in,
+            top=0.8in,
+            bottom=0.8in,
+            footskip=.25in]{geometry}
+\setlength\parindent{10pt} % No indent
+
+%%% Imports
+% Mathematics
+\usepackage{amsmath} % Math formatting
+\numberwithin{equation}{section} % Number equation per section
+\DeclareMathOperator{\Tr}{Tr}
+
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{definition}{Definition}
+\newtheorem{proof}{Proof}
+\newtheorem{lemma}{Lemma}
+\newtheorem{example}{Example}
+
+\usepackage{amsmath}
+\usepackage{amsfonts} % Math fonts
+\usepackage{amssymb} % Math symbols
+\usepackage{mathtools} % Math etc.
+\usepackage{slashed} % Dirac slash notation
+\usepackage{cancel} % Cancels to zero
+\usepackage{empheq}
+\usepackage{breqn}
+
+\newcommand{\expect}[1]{\mathbb{E}\left[#1\right]}
+
+
+% Visualization
+\usepackage{graphicx} % for including images
+\graphicspath{ {} } % Path to graphics folder
+\usepackage{tikz}
+
+
+
+%%% Formating
+\usepackage{hyperref} % Hyperlinks
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,      
+    urlcolor=cyan,
+    pdftitle={Overleaf Example},
+    pdfpagemode=FullScreen,
+    }
+\urlstyle{same}
+
+\usepackage{mdframed} % Framed Enviroments
+\newmdenv[ 
+  topline=false,
+  bottomline=false,
+  skipabove=\topsep,
+  skipbelow=\topsep
+]{sidework} %% Side-work
+
+\usepackage{lipsum} % Lorem Ipsum example text
+
+%%%%% ------------------ %%%%%
+%%% Title
+\title{Comparing Affine Invariant Samplers on Radial Velocities}
+\author{Clark Miyamoto (cm6627@nyu.edu)}
+\date{Date}
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+	Bayesian analysis of radial velocities (assuming a keplerian orbit) can yield information on the system's parameters. Previous studies from Price-Whelan et al. \cite{Price_Whelan_2017} use affine invariant samplers \cite{emcee} \& Hamiltonian Monte Carlo to sample these posteriors. Here we compare these previous methods to a new affine invariant method: Affine Invariant Hamiltonian Monte Carlo \cite{chen2025newaffineinvariantensemble}.
+\end{abstract}
+
+\section{Introduction}
+
+
+
+
+\bibliographystyle{naturemag} % We choose the "plain" reference style
+\bibliography{references.bib} % Entries are in the refs.bib file
+\end{document}
