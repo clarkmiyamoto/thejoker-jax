@@ -1,3 +1,11 @@
+# Astro-related files
+*.fits
+*.fits.gz
+*.fits.bz2
+*.fits.zip
+*.fits.tar
+*.fits.tar.gz
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
