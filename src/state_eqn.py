@@ -37,11 +37,18 @@ def kepler_refiner(mean_anom, ecc, ecc_anom):
 
     return ecc_anom + dE
 
-@jax.jit
 @jnp.vectorize
-def kepler_solver_impl(mean_anom, ecc):
+def kepler_solver_impl(mean_anom: jnp.ndarray, 
+                       ecc: float):
     """
     Calculates eccentric anomaly `E` from mean anomaly `M` and eccentricity `e`.
+
+    Args:
+        - mean_anom: mean anomaly. Shape is (batch_size,).
+        - ecc: eccentricity.
+
+    Returns:
+        - eccentric anomaly. Shape is (batch_size,).
     """
     mean_anom = mean_anom % (2 * jnp.pi)
 
@@ -61,7 +68,7 @@ def kepler_solver_impl(mean_anom, ecc):
 ################################################################################
 # State Equation
 ################################################################################
-def velocity(t: float, 
+def velocity(t: jnp.ndarray, 
              period: float, 
              eccentricity: float, 
              omega: float, 
@@ -69,20 +76,20 @@ def velocity(t: float,
              K: float,
              v0: float) -> float:
     """
-    Calculate velocity at time `t` for a given period, eccentricity, omega, phi0, K, and v0.
+    Calculate velocity at times `t` for a given period, eccentricity, omega, phi0, K, and v0.
     Using equation (1-4) in https://arxiv.org/pdf/1610.07602
 
     Args:
-        - t: time
-        - period: period of the orbit
-        - eccentricity: eccentricity of the orbit
-        - omega: argument of periastron
-        - phi0: phase offset
-        - K: semi-amplitude of the velocity
-        - v0: velocity offset
+        - t: time. Units (days). Shape is (batch_size,).
+        - period: period of the orbit. Units (days).
+        - eccentricity: eccentricity of the orbit.
+        - omega: argument of periastron. Units (radians).
+        - phi0: phase offset. Units (radians).
+        - K: semi-amplitude of the velocity. Units (m/s).
+        - v0: velocity offset. Units (m/s).
 
     Returns:
-        - velocity at time `t`
+        - velocity at time `t`. Shape is (batch_size,).
     """
     mean_anom = (2 * jnp.pi * t / period) + phi0 
 
