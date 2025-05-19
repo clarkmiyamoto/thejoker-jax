@@ -4,7 +4,7 @@ from typing import Callable
 
 from .state_eqn import velocity
 
-class Likelihood:
+class LogLikelihood:
     '''
     Implementation of the unmarginalized likelihood.
     Equation (10) in https://arxiv.org/pdf/1610.07602

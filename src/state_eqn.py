@@ -67,6 +67,7 @@ def kepler_solver_impl(mean_anom: jnp.ndarray,
 
 ################################################################################
 # State Equation
+# See https://arxiv.org/pdf/1610.07602
 ################################################################################
 def velocity(t: jnp.ndarray, 
              period: float, 
@@ -91,16 +92,28 @@ def velocity(t: jnp.ndarray,
     Returns:
         - velocity at time `t`. Shape is (batch_size,).
     """
-    mean_anom = (2 * jnp.pi * t / period) + phi0 
+    # Equation (3)
+    mean_anom = (2 * jnp.pi * t / period) - phi0 
 
+    # Equation (4)
     E = kepler_solver_impl(mean_anom, eccentricity)
 
-    f = jnp.arccos((jnp.cos(E) - eccentricity) / (1 - eccentricity * jnp.cos(E)))
+    # Equation (2)  
+    # Taken from jaxoplanet/core/kepler.py -> _kepler(...)
+    # Convert to true anomaly; tan(0.5 * f)
+    tan_half_f = jnp.sqrt((1 + eccentricity) / (1 - eccentricity)) * jnp.tan(0.5 * E)
+    tan2_half_f = jnp.square(tan_half_f)
+    denom = 1 / (1 + tan2_half_f)
+    
+    cos_f = 2 * tan_half_f * denom
+    sin_f = (1 - tan2_half_f) * denom  
 
+    # Equation (1)
     return (
         v0 + 
-        K * (jnp.cos(omega + f) +eccentricity * jnp.sin(omega))
+        K * (
+            jnp.cos(omega) * cos_f 
+            - jnp.sin(omega) * sin_f 
+            + eccentricity * jnp.sin(omega)
+            )
     )
-
-
-
