@@ -118,35 +118,12 @@ def hmc(log_prob,
         # Proposed state
         x, p = leapfrog(x, p, grad_fn, epsilon, L) # Shape (n_chains, dim), (n_chains, dim)
 
-        # proposed_K2 = jnp.clip(0.5 * p2_current**2, 0, 1000)
-
-        # # Metropolis acceptance - IMPROVED FOR NUMERICAL STABILITY
-        # dH2 = (proposed_U2 + proposed_K2) - (current_U2 + current_K2)
-
-        # # Calculate acceptance probabilities with numerical safeguards for exp
-        # accept_probs2 = jnp.ones_like(dH2)  # Default to accept
-        # # Only calculate exp for positive dH (negative cases auto-accept with prob 1.0)
-        # exp_needed = dH2 > 0
-        # safe_dH = jnp.clip(dH2, a_min=None, a_max=100.0)   # Shape (n_chains_per_group,)
-        # accept_probs2 = jnp.where(
-        #     exp_needed,                # boolean mask
-        #     jnp.exp(-safe_dH),         # “true” branch (vectorised)
-        #     accept_probs2              # “false” branch (original values)
-        # ) # Shape (n_chains_per_group,)
-        
-        # accepts2 = jax.random.uniform(keys[5], shape=(n_chains_per_group,)) < accept_probs2
-
-        # # Update states - VECTORIZED
-        # updated_group2_states = jnp.where(accepts2[:, None], q2, states[group2_indices])
-        # states = states.at[group2_indices].set(updated_group2_states)
-
         ### Metropolis acceptance
         current_log_probs = log_prob_fn(current_x)      # Shape (n_chains,)
         proposal_log_probs = log_prob_fn(x)             # Shape (n_chains,)
         current_K = 0.5 * jnp.sum(current_p**2, axis=1) # Shape (n_chains,)
         proposal_K = 0.5 * jnp.sum(p**2, axis=1)        # Shape (n_chains,)
 
-        # dH2 = (proposed_U2 + proposed_K2) - (current_U2 + current_K2)
         dH = (proposal_log_probs + proposal_K) - (current_log_probs + current_K)
         log_accept_prob = jnp.minimum(0.0, dH) # Shape (n_chains,)
 
@@ -157,10 +134,6 @@ def hmc(log_prob,
         
         accepts += accept_mask.astype(int) # shape (n_chains,)
         
-        # Store current state for all chains (only every n_thin iterations after the first)
-        # if (i - 1) % n_thin == 0 and sample_idx < n_samples:
-        #     samples = samples.at[:, sample_idx, :].set(chains)
-        #     sample_idx += 1
         return (current_x, accepts), current_x
     
     carry, samples = jax.lax.scan(
@@ -462,3 +435,195 @@ def hamiltonian_side_move(potential_func,
     acceptance_rates = accepts / (total_iterations * n_chains_per_group * 2)
     
     return previous_states, acceptance_rates
+
+########################################################
+# Hamiltonian Walk Move (HWM)
+########################################################
+
+def leapfrog_walk_move(q, 
+                       p, 
+                       grad_fn, 
+                       beta_eps, 
+                       L,
+                       centered):
+    '''
+    
+    '''
+    grad = grad_fn(q) # Shape (n_chains_per_group, dim)
+    grad = jnp.nan_to_num(grad, nan=0.0) 
+
+    p -= 0.5 * beta_eps * jnp.einsum('ik,jk->ij', grad, centered) # Shape (n_chains_per_group, n_chains_per_group)
+   
+
+    for step in range(L):
+        q += beta_eps * jnp.einsum('ik,kj->ij', p, centered) # Shape (n_chains_per_group, dim)
+
+        if (step < L - 1):
+            grad = grad_fn(q) # Shape (n_chains_per_group, dim)
+            grad = jnp.nan_to_num(grad, nan=0.0)
+
+            p -= 0.5 * beta_eps * jnp.einsum('ik,jk->ij', grad, centered)
+
+    grad = grad_fn(q) # Shape (n_chains_per_group, dim)
+    grad = jnp.nan_to_num(grad, nan=0.0)
+
+    p -= 0.5 * beta_eps * jnp.einsum('ik,jk->ij', grad, centered)
+
+    return q, p
+
+    
+
+
+def hamiltonian_walk_move(potential_func, 
+                          initial, 
+                          n_samples, 
+                          n_chains_per_group=5, 
+                          epsilon=0.01, 
+                          L=10, 
+                          beta=0.05,
+                          n_thin=1,
+                          key=jax.random.PRNGKey(0)):
+    """
+    Hamiltonian Walk Move (HWM) sampler implementation using JAX.
+    """
+    # JIT
+    potential_func_vmap = jax.jit(jax.vmap(potential_func))           # F: (n_chains, dim) -> (n_chains,)
+    grad_fn_vmap        = jax.jit(jax.vmap(jax.grad(potential_func))) # F: (n_chains, dim) -> (n_chains, dim)
+
+    # Sizes
+    dim = len(initial)
+    total_chains = 2 * n_chains_per_group
+    total_iterations = n_samples * n_thin
+
+    # Initalize States
+    spread = 0.1
+    states = jnp.tile(initial.flatten(), (total_chains, 1)) + spread * jax.random.normal(key, shape=(total_chains, dim)) # Shape (total_chains, dim)
+    states_group1 = states[:n_chains_per_group] # Shape (n_chains_per_group, dim)
+    states_group2 = states[n_chains_per_group:] # Shape (n_chains_per_group, dim)
+
+    accepts_group1 = jnp.zeros(n_chains_per_group)
+    accepts_group2 = jnp.zeros(n_chains_per_group)
+
+    keys_per_iter = 4
+    all_keys = jax.random.split(key, total_iterations * keys_per_iter).reshape(total_iterations, keys_per_iter, 2)
+
+    beta_eps = beta * epsilon
+
+    def main_loop(carry, keys):
+        #---------------------------------------------
+        # Unpack input
+        #---------------------------------------------
+        states_group1, states_group2, accepts_group1, accepts_group2 = carry # Array shapped (total_chains, dim), integer
+
+        q1 = states_group1
+        q2 = states_group2
+        q1_current = q1.copy()
+        q2_current = q2.copy()
+
+
+        ########################################################
+        # Group 1
+        ########################################################
+
+        centered2 = (q1 - jnp.mean(q2, axis=0)[None, :]) / jnp.sqrt(n_chains_per_group) # Shape (n_chains_per_group, dim)
+
+        # Random Momentum
+        p1 = jax.random.normal(keys[0], shape=(n_chains_per_group, n_chains_per_group))
+        p1_current = p1.copy()
+
+        # Current Energy
+        current_U1 = potential_func_vmap(q1_current) # Shape (n_chains_per_group,)
+        current_K1 = jnp.clip(0.5 * jnp.sum(p1_current**2, axis=1), 0, 1000) # Shape (n_chains_per_group,)
+
+        # Leapfrog Integration
+        q1_proposed, p1_proposed = leapfrog_walk_move(
+            q1, 
+            p1, 
+            grad_fn_vmap, 
+            beta_eps, 
+            L, 
+            centered2
+        )
+        proposed_U1 = potential_func_vmap(q1_proposed)
+        proposed_K1 = jnp.clip(0.5 * jnp.sum(p1_proposed**2, axis=1), 0, 1000) # Shape (n_chains_per_group,)
+
+        # Metropolis Step
+        dH1 = (proposed_U1 + proposed_K1) - (current_U1 + current_K1)
+
+        exp_needed = dH1 > 0
+        safe_dH = jnp.clip(dH1, a_min=None, a_max=100.0)
+        accept_probs1 = jnp.where(
+            exp_needed,
+            jnp.exp(-safe_dH),
+            jnp.ones_like(dH1)
+        )
+
+        accepts1 = jax.random.uniform(keys[1], shape=(n_chains_per_group,)) < accept_probs1
+
+        # Log Changes
+        accepts_group1 += accepts1
+        states_group1 = jnp.where(accepts1[:, None], q1_proposed, states_group1)
+
+
+        ########################################################
+        # Group 2
+        ########################################################
+
+        centered1 = (q2 - jnp.mean(q1, axis=0)) / jnp.sqrt(n_chains_per_group) # Shape (n_chains_per_group, dim)
+
+        # Random Momentum
+        p2 = jax.random.normal(keys[2], shape=(n_chains_per_group, n_chains_per_group))
+        p2_current = p2.copy()
+
+        # Current Energy
+        current_U2 = potential_func_vmap(q2_current)
+        current_K2 = jnp.clip(0.5 * jnp.sum(p2_current**2, axis=1), 0, 1000) # Shape (n_chains_per_group,)
+
+        # Leapfrog Integration
+        q2_proposed, p2_proposed = leapfrog_walk_move(
+            q2, 
+            p2, 
+            grad_fn_vmap, 
+            beta_eps, 
+            L, 
+            centered1
+        )
+        proposed_U2 = potential_func_vmap(q2_proposed)
+        proposed_K2 = jnp.clip(0.5 * jnp.sum(p2_proposed**2, axis=1), 0, 1000) # Shape (n_chains_per_group,)
+
+        # Metropolis Step
+        dH2 = (proposed_U2 + proposed_K2) - (current_U2 + current_K2)
+
+        exp_needed = dH2 > 0
+        safe_dH = jnp.clip(dH2, a_min=None, a_max=100.0)
+        accept_probs2 = jnp.where(
+            exp_needed,
+            jnp.exp(-safe_dH),
+            jnp.ones_like(dH2)
+        )
+
+        accepts2 = jax.random.uniform(keys[3], shape=(n_chains_per_group,)) < accept_probs2
+
+        # Log Changes
+        accepts_group2 += accepts2
+        states_group2 = jnp.where(accepts2[:, None], q2_proposed, states_group2)
+
+        ########################################################
+        # Return
+        ########################################################
+
+        final_states = jnp.concatenate([states_group1, states_group2]) # Shape (total_chains, dim)
+
+        return (states_group1, states_group2, accepts_group1, accepts_group2), final_states
+    
+    carry, previous_states = jax.lax.scan(main_loop, init=(states_group1, states_group2, accepts_group1, accepts_group2), xs=all_keys)
+    states_group1, states_group2, accepts_group1, accepts_group2 = carry
+
+    # Compute acceptance rates for all chains
+    acceptance_rates_group1 = accepts_group1 / (total_iterations) # Shape (n_chains_per_group,)
+    acceptance_rates_group2 = accepts_group2 / (total_iterations) # Shape (n_chains_per_group,)
+
+    acceptance_rates = jnp.concatenate([acceptance_rates_group1, acceptance_rates_group2]) # Shape (total_chains,)
+
+    return previous_states, acceptance_rates
+
