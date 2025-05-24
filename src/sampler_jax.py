@@ -2,34 +2,49 @@ import jax
 import jax.numpy as jnp
 from tqdm import tqdm
 
-def leapfrog(x, p, grad_fn, epsilon, L):
-    # Get gradients for all chains
-    x_grad = grad_fn(x)
-    x_grad = jnp.nan_to_num(x_grad, nan=0.0)
+import jax
+import jax.numpy as jnp
 
-    # Half step for momentum
-    p -= 0.5 * epsilon * x_grad
+def leapfrog(x: jnp.ndarray, p: jnp.ndarray, grad_fn: callable, epsilon: float, L: int):
+    """
+    Vectorised leap-frog integrator without Python-side conditionals.
 
-    # Full steps for position and momentum
-    for j in range(L):
-        x += epsilon * p
-        
-        if (j < L - 1):
-            x_grad = grad_fn(x)
-            x_grad = jnp.nan_to_num(x_grad, nan=0.0)
+    Args:
+        - x: current position. Shape (n_chains, dim)
+        - p: current momentum. Shape (n_chains, dim)
+        - grad_fn: callable - ∇log π(x). Function of shape (n_chains, dim) -> (n_chains, dim)
+        - epsilon: Step size.
+        - L: Number of leap-frog steps
 
-            p -= epsilon * x_grad
-        
-    x_grad = grad_fn(x)
-    x_grad = jnp.nan_to_num(x_grad, nan=0.0)
-    
+    Returns:
+        - x: proposed position. Shape (n_chains, dim)
+        - p: proposed momentum. Shape (n_chains, dim)
+    """
+    # initial half step for momentum
+    x_grad = jnp.nan_to_num(grad_fn(x), nan=0.0)
+    p      = p - 0.5 * epsilon * x_grad
 
-    p -= 0.5 * epsilon * x_grad
+    # body for the first L-1 full steps
+    def body(_, state):
+        x, p = state
+        x = x + epsilon * p                        # full position step
+        x_grad = jnp.nan_to_num(grad_fn(x), nan=0.0)
+        p = p - epsilon * x_grad                   # full momentum step
+        return (x, p)
 
-    # Flip momentum for reversibility
-    p *= -1
+    # iterate body L-1 times
+    x, p = jax.lax.fori_loop(0, L - 1, body, (x, p))
 
-    return x, p
+    # final position update (last half step for x)
+    x = x + epsilon * p
+
+    # final half step for momentum
+    x_grad = jnp.nan_to_num(grad_fn(x), nan=0.0)
+    p = p - 0.5 * epsilon * x_grad
+
+    # flip momentum for reversibility
+    return x, -p
+
     
 def hmc(log_prob,
         initial: jnp.ndarray,
@@ -78,65 +93,85 @@ def hmc(log_prob,
 
     # Integers
     dim = len(initial)
-    total_iterations = 1 + (n_samples - 1) * n_thin
-    sample_idx = 1
+    total_iterations = n_samples * n_thin
 
     # Random Numbers
     subkey_momentum, subkey_acceptance = jax.random.split(key, 2)
+    
     # Shape (total_iterations + 1, ...), the +1 is for the initial momentum
-    p_rng = jax.random.normal(subkey_momentum, shape=(total_iterations + 1, n_chains, dim))
-    acceptance_rng = jax.random.uniform(subkey_acceptance, shape=(total_iterations, n_chains,))
+    p_rngs = jax.random.normal(subkey_momentum, shape=(total_iterations + 1, n_chains, dim))
+    acceptance_rngs = jnp.log(jax.random.uniform(subkey_acceptance, shape=(total_iterations, n_chains,), minval=1e-6, maxval=1))
     
-
-    chains = jnp.tile(initial, (n_chains, 1)) + 0.1 * p_rng[0]
-    chain_log_probs = log_prob_fn(chains) # Shape (n_chains,)
+    spread: float = 0.1
+    chains_init = initial[None, :] + spread * p_rngs[0] # shape (n_chains, dim)
+    log_probs_init = log_prob_fn(chains_init) # shape (n_chains,)
+    accepts_init = jnp.zeros(n_chains) # shape (n_chains,)
     
-    samples = jnp.zeros((n_chains, n_samples, dim))
-    accepts = jnp.zeros(n_chains)
+    def main_loop(carry, lst_i):
+        x, accepts = carry
+        p, log_u = lst_i
 
-    samples = samples.at[:, 0, :].set(chains) 
+        current_x = x.copy()
+        current_p = p.copy() # Shape (n_chains, dim)
 
-   
+        ### Leapfrog integration
+        # Proposed state
+        x, p = leapfrog(x, p, grad_fn, epsilon, L) # Shape (n_chains, dim), (n_chains, dim)
 
-    for i in tqdm(range(1, total_iterations)):
-        p = p_rng[i]
+        # proposed_K2 = jnp.clip(0.5 * p2_current**2, 0, 1000)
 
-        # Leapfrog integration
-        current_p = p.copy()
-        x = chains.copy()
+        # # Metropolis acceptance - IMPROVED FOR NUMERICAL STABILITY
+        # dH2 = (proposed_U2 + proposed_K2) - (current_U2 + current_K2)
+
+        # # Calculate acceptance probabilities with numerical safeguards for exp
+        # accept_probs2 = jnp.ones_like(dH2)  # Default to accept
+        # # Only calculate exp for positive dH (negative cases auto-accept with prob 1.0)
+        # exp_needed = dH2 > 0
+        # safe_dH = jnp.clip(dH2, a_min=None, a_max=100.0)   # Shape (n_chains_per_group,)
+        # accept_probs2 = jnp.where(
+        #     exp_needed,                # boolean mask
+        #     jnp.exp(-safe_dH),         # “true” branch (vectorised)
+        #     accept_probs2              # “false” branch (original values)
+        # ) # Shape (n_chains_per_group,)
         
-        x, p = leapfrog(x, p, grad_fn, epsilon, L)
+        # accepts2 = jax.random.uniform(keys[5], shape=(n_chains_per_group,)) < accept_probs2
 
-        # Metropolis acceptance (vectorized)
-        proposal_log_probs = log_prob_fn(x)
+        # # Update states - VECTORIZED
+        # updated_group2_states = jnp.where(accepts2[:, None], q2, states[group2_indices])
+        # states = states.at[group2_indices].set(updated_group2_states)
 
-        # Compute log acceptance ratio directly in log space - avoiding exp
-        current_K = 0.5 * jnp.sum(current_p**2, axis=1)
-        proposal_K = 0.5 * jnp.sum(p**2, axis=1)
+        ### Metropolis acceptance
+        current_log_probs = log_prob_fn(current_x)      # Shape (n_chains,)
+        proposal_log_probs = log_prob_fn(x)             # Shape (n_chains,)
+        current_K = 0.5 * jnp.sum(current_p**2, axis=1) # Shape (n_chains,)
+        proposal_K = 0.5 * jnp.sum(p**2, axis=1)        # Shape (n_chains,)
 
-        # Calculate log acceptance probability directly to avoid overflow
-        log_accept_prob = jnp.minimum(0, proposal_log_probs - chain_log_probs - proposal_K + current_K)
+        # dH2 = (proposed_U2 + proposed_K2) - (current_U2 + current_K2)
+        dH = (proposal_log_probs + proposal_K) - (current_log_probs + current_K)
+        log_accept_prob = jnp.minimum(0.0, dH) # Shape (n_chains,)
 
-        # Generate uniform random numbers for acceptance decision
-        log_u = jnp.log(acceptance_rng[i]) # Shape (n_chains,)
+        # Create mask for accepted proposals. True means accept the proposal, false means reject the proposal
+        accept_mask = log_u < log_accept_prob # Shape (n_chains,)
+        current_x = jnp.where(accept_mask[:, None], x, current_x)
+        # current_log_probs = jnp.where(accept_mask[:, None], proposal_log_probs, current_log_probs)
         
-        # Create mask for accepted proposals
-        accept_mask = log_u < log_accept_prob
-        
-        # Update chains and log probabilities where accepted
-        chains          = jnp.where(accept_mask[:, None], x, chains)
-        chain_log_probs = jnp.where(accept_mask, proposal_log_probs, chain_log_probs)
-        
-        # Track acceptances
-        accepts += accept_mask
+        accepts += accept_mask.astype(int) # shape (n_chains,)
         
         # Store current state for all chains (only every n_thin iterations after the first)
-        if (i - 1) % n_thin == 0 and sample_idx < n_samples:
-            samples = samples.at[:, sample_idx, :].set(chains)
-            sample_idx += 1
+        # if (i - 1) % n_thin == 0 and sample_idx < n_samples:
+        #     samples = samples.at[:, sample_idx, :].set(chains)
+        #     sample_idx += 1
+        return (current_x, accepts), current_x
+    
+    carry, samples = jax.lax.scan(
+        main_loop, 
+        init=(chains_init, accepts_init), 
+        xs=(p_rngs[1:], acceptance_rngs) # Removed the first momentum as it's already in the initial state
+    )
+    accepts = carry[1]
 
     # Calculate acceptance rates for all chains
-    acceptance_rates = accepts / (total_iterations - 1)
+    acceptance_rates = accepts / total_iterations
     
     return samples, acceptance_rates
 
