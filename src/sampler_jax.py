@@ -104,7 +104,6 @@ def hmc(log_prob,
     
     spread: float = 0.1
     chains_init = initial[None, :] + spread * p_rngs[0] # shape (n_chains, dim)
-    log_probs_init = log_prob_fn(chains_init) # shape (n_chains,)
     accepts_init = jnp.zeros(n_chains) # shape (n_chains,)
     
     def main_loop(carry, lst_i):
@@ -130,7 +129,6 @@ def hmc(log_prob,
         # Create mask for accepted proposals. True means accept the proposal, false means reject the proposal
         accept_mask = log_u < log_accept_prob # Shape (n_chains,)
         current_x = jnp.where(accept_mask[:, None], x, current_x)
-        # current_log_probs = jnp.where(accept_mask[:, None], proposal_log_probs, current_log_probs)
         
         accepts += accept_mask.astype(int) # shape (n_chains,)
         
