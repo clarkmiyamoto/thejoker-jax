@@ -49,6 +49,7 @@ def leapfrog(x: jnp.ndarray, p: jnp.ndarray, grad_fn: callable, epsilon: float, 
 def hmc(log_prob,
         initial: jnp.ndarray,
         n_samples,
+        grad_fn = None,
         epsilon=0.1,
         L=10,
         n_chains=1,
@@ -89,7 +90,11 @@ def hmc(log_prob,
     ### Setup
     # JIT access to functions
     log_prob_fn = jax.jit(jax.vmap(log_prob))
-    grad_fn = jax.jit(jax.vmap(jax.grad(log_prob)))
+
+    if grad_fn is None:
+        grad_fn = jax.jit(jax.vmap(jax.grad(log_prob))) # F: (n_chains, dim) -> (n_chains, dim)
+    else:
+        grad_fn = jax.jit(jax.vmap(grad_fn)) # F: (n_chains, dim) -> (n_chains, dim)
 
     # Integers
     dim = len(initial)
@@ -146,6 +151,25 @@ def hmc(log_prob,
     
     return samples, acceptance_rates
 
+
+def nuts(log_prob,
+         initial: jnp.ndarray,
+         n_samples,
+         grad_fn = None,
+         epsilon=0.1,
+         n_chains=1,
+         n_thin=1,
+         key=jax.random.PRNGKey(0)):
+    '''
+    Implementation of No-U-Turn Sampler (NUTS)
+    '''
+    pass
+
+
+########################################################
+# Affine Invariant method
+########################################################
+
 ########################################################
 # Hamiltonian Side Move (HSM)
 ########################################################
@@ -200,8 +224,9 @@ def leapfrog_side_move(q1,
 
 def hamiltonian_side_move(potential_func, 
                           initial, 
-                          n_samples, 
-                          n_chains_per_group=5, 
+                          n_samples,
+                          grad_fn = None, 
+                          n_chains_per_group = 5,
                           epsilon=0.01, 
                           L=10, 
                           beta=1.0,
@@ -258,7 +283,11 @@ def hamiltonian_side_move(potential_func,
     total_chains = 2 * n_chains_per_group
 
     potential_func_vmap = jax.jit(jax.vmap(potential_func))           # F: (n_chains, dim) -> (n_chains,)
-    grad_fn_vmap        = jax.jit(jax.vmap(jax.grad(potential_func))) # F: (n_chains, dim) -> (n_chains, dim)
+    
+    if grad_fn is None:
+        grad_fn_vmap = jax.jit(jax.vmap(jax.grad(potential_func))) # F: (n_chains, dim) -> (n_chains, dim)
+    else:
+        grad_fn_vmap = jax.jit(jax.vmap(grad_fn)) # F: (n_chains, dim) -> (n_chains, dim)
 
     # Create initial states with small random perturbations
 
@@ -475,6 +504,7 @@ def leapfrog_walk_move(q,
 def hamiltonian_walk_move(potential_func, 
                           initial, 
                           n_samples, 
+                          grad_fn = None,
                           n_chains_per_group=5, 
                           epsilon=0.01, 
                           L=10, 
@@ -486,7 +516,10 @@ def hamiltonian_walk_move(potential_func,
     """
     # JIT
     potential_func_vmap = jax.jit(jax.vmap(potential_func))           # F: (n_chains, dim) -> (n_chains,)
-    grad_fn_vmap        = jax.jit(jax.vmap(jax.grad(potential_func))) # F: (n_chains, dim) -> (n_chains, dim)
+    if grad_fn is None:
+        grad_fn_vmap = jax.jit(jax.vmap(jax.grad(potential_func))) # F: (n_chains, dim) -> (n_chains, dim)
+    else:
+        grad_fn_vmap = jax.jit(jax.vmap(grad_fn)) # F: (n_chains, dim) -> (n_chains, dim)
 
     # Sizes
     dim = len(initial)

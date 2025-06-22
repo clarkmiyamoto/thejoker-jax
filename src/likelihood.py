@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 from typing import Callable
 
-from .state_eqn import velocity
+from .velocity import velocity
 
 class LogLikelihood:
     '''
@@ -17,11 +17,11 @@ class LogLikelihood:
                  jitter: float = 0.0):
         '''
         Args:
-            model: Function which takes array sized (batch_size, n_params) and returns array sized (batch_size,).
             observed_data: Shape is (batch_size,).
             uncertainity: Shape is (batch_size,).
             jitter: Additioinal noise.
         '''
+        self.times = times
         self.observed_data = observed_data
         self.uncertainity = uncertainity
         self.jitter = jitter
