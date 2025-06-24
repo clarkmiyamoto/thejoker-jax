@@ -657,4 +657,3 @@ def hamiltonian_walk_move(potential_func,
     acceptance_rates = jnp.concatenate([acceptance_rates_group1, acceptance_rates_group2]) # Shape (total_chains,)
 
     return previous_states, acceptance_rates
-
