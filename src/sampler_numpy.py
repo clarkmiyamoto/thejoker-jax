@@ -637,7 +637,7 @@ def hamiltonian_walk_move(gradient_func, potential_func, initial, n_samples, n_c
             sample_idx += 1
         
         # Compute centered ensembles for preconditioning
-        centered2 = (states[group2] - np.mean(states[group2], axis=0)) / np.sqrt(n_chains_per_group)
+        centered2 = (states[group2] - np.mean(states[group2], axis=0)) / np.sqrt(n_chains_per_group) # Shape (n_chains_per_group, dim)
         
         # First group update
         # Generate momentum - fully vectorized with correct dimensions
@@ -647,7 +647,9 @@ def hamiltonian_walk_move(gradient_func, potential_func, initial, n_samples, n_c
         current_q1 = states[group1].copy()
         current_q1_reshaped = current_q1.reshape(n_chains_per_group, *orig_dim)
         current_U1 = potential_func(current_q1_reshaped)
-        current_K1 =  np.clip(0.5 *np.sum(p1**2, axis=1), 0, 1000)
+        # current_K1 =  np.clip(0.5 *np.sum(p1**2, axis=1), 0, 1000)
+        current_K1 =  0.5 *np.sum(p1**2, axis=1)
+
         
         # Leapfrog integration with preconditioning
         q1 = current_q1.copy()
@@ -685,8 +687,9 @@ def hamiltonian_walk_move(gradient_func, potential_func, initial, n_samples, n_c
         
         # Compute proposed energy
         proposed_U1 = potential_func(q1.reshape(n_chains_per_group, *orig_dim))
-        proposed_K1 = np.clip(0.5 *np.sum(p1_current**2, axis=1), 0, 1000)
-        
+        # proposed_K1 = np.clip(0.5 *np.sum(p1_current**2, axis=1), 0, 1000)
+        proposed_K1 = 0.5 *np.sum(p1_current**2, axis=1)
+
         # Metropolis acceptance - IMPROVED FOR NUMERICAL STABILITY
         dH1 = (proposed_U1 + proposed_K1) - (current_U1 + current_K1)
         
@@ -696,7 +699,9 @@ def hamiltonian_walk_move(gradient_func, potential_func, initial, n_samples, n_c
         exp_needed = dH1 > 0
         if np.any(exp_needed):
             # Clip extremely high values before exponentiating
-            safe_dH = np.clip(dH1[exp_needed], None, 100)  # No lower bound, upper bound of 100
+            # safe_dH = np.clip(dH1[exp_needed], None, 100)  # No lower bound, upper bound of 100
+            safe_dH = dH1[exp_needed]  # No lower bound, upper bound of 100
+
             accept_probs1[exp_needed] = np.exp(-safe_dH)
         
         accepts1 = np.random.random(n_chains_per_group) < accept_probs1
@@ -713,7 +718,8 @@ def hamiltonian_walk_move(gradient_func, potential_func, initial, n_samples, n_c
         current_q2 = states[group2].copy()
         current_q2_reshaped = current_q2.reshape(n_chains_per_group, *orig_dim)
         current_U2 = potential_func(current_q2_reshaped)
-        current_K2 = np.clip(0.5 *np.sum(p2**2, axis=1), 0, 1000)
+        # current_K2 = np.clip(0.5 *np.sum(p2**2, axis=1), 0, 1000)
+        current_K2 = 0.5 *np.sum(p2**2, axis=1)
         
         q2 = current_q2.copy()
         p2_current = p2.copy()
@@ -748,7 +754,8 @@ def hamiltonian_walk_move(gradient_func, potential_func, initial, n_samples, n_c
         
         # Compute proposed energy
         proposed_U2 = potential_func(q2.reshape(n_chains_per_group, *orig_dim))
-        proposed_K2 = np.clip(0.5 *np.sum(p2_current**2, axis=1), 0, 1000)
+        # proposed_K2 = np.clip(0.5 *np.sum(p2_current**2, axis=1), 0, 1000)
+        proposed_K2 = 0.5 *np.sum(p2_current**2, axis=1)
         
         # Metropolis acceptance - IMPROVED FOR NUMERICAL STABILITY
         dH2 = (proposed_U2 + proposed_K2) - (current_U2 + current_K2)
@@ -759,7 +766,8 @@ def hamiltonian_walk_move(gradient_func, potential_func, initial, n_samples, n_c
         exp_needed = dH2 > 0
         if np.any(exp_needed):
             # Clip extremely high values before exponentiating
-            safe_dH = np.clip(dH2[exp_needed], None, 100)  # No lower bound, upper bound of 100
+            # safe_dH = np.clip(dH2[exp_needed], None, 100)  # No lower bound, upper bound of 100
+            safe_dH = dH2[exp_needed]
             accept_probs2[exp_needed] = np.exp(-safe_dH)
         
         accepts2 = np.random.random(n_chains_per_group) < accept_probs2

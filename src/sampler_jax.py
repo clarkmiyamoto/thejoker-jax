@@ -5,6 +5,9 @@ from tqdm import tqdm
 import jax
 import jax.numpy as jnp
 
+from typing import Callable
+
+
 def leapfrog(x: jnp.ndarray, p: jnp.ndarray, grad_fn: callable, epsilon: float, L: int):
     """
     Vectorised leap-frog integrator without Python-side conditionals.
@@ -222,14 +225,14 @@ def leapfrog_side_move(q1,
 
     return q1, p1_current # Shape (n_chains_per_group, dim), (n_chains_per_group,)
 
-def hamiltonian_side_move(potential_func, 
-                          initial, 
-                          n_samples,
-                          grad_fn = None, 
-                          n_chains_per_group = 5,
-                          epsilon=0.01, 
-                          L=10, 
-                          beta=1.0,
+def hamiltonian_side_move(potential_func: Callable, 
+                          initial: jnp.ndarray, 
+                          n_samples: int,
+                          grad_fn: Callable = None, 
+                          n_chains_per_group: int = 5,
+                          epsilon: float = 0.01, 
+                          L: int = 10, 
+                          beta: float = 1.0,
                           n_thin = 1,
                           key=jax.random.PRNGKey(0)):
     """Hamiltonian Side Move (HSM) sampler implementation using JAX.
@@ -348,7 +351,7 @@ def hamiltonian_side_move(potential_func,
         current_q1 = states[group1_indices].copy() # Shape (n_chains_per_group, dim)
         current_U1 = potential_func_vmap(current_q1) # Shape (n_chains_per_group, dim) -> (n_chains_per_group,)
 
-        current_K1 = jnp.clip(0.5 * p1**2, 0, 1000)
+        current_K1 = 0.5 * p1**2
 
         q1, p1_current = leapfrog_side_move(
             current_q1, 
@@ -362,24 +365,19 @@ def hamiltonian_side_move(potential_func,
         
         # Compute proposed energy
         proposed_U1 = potential_func_vmap(q1) # Shape (n_chains_per_group,)
-        proposed_K1 = jnp.clip(0.5 * p1_current**2, 0, 1000) # Shape (n_chains_per_group,)
+        proposed_K1 = 0.5 * p1_current**2 # Shape (n_chains_per_group,)
         
-        # Metropolis acceptance - IMPROVED FOR NUMERICAL STABILITY
+        # Metropolis acceptance in log scale for numerical stability
         dH1 = (proposed_U1 + proposed_K1) - (current_U1 + current_K1) # Shape (n_chains_per_group,)
-
-        # Calculate acceptance probabilities with numerical safeguards for exp
-        accept_probs1 = jnp.ones_like(dH1)  # Shape (n_chains_per_group,)
         
-        # Only calculate exp for positive dH (negative cases auto-accept with prob 1.0)
-        exp_needed = dH1 > 0
-        safe_dH = jnp.clip(dH1, a_min=None, a_max=100.0)   # Shape (n_chains_per_group,)
-        accept_probs1 = jnp.where(
-            exp_needed,                # boolean mask
-            jnp.exp(-safe_dH),         # “true” branch (vectorised)
-            accept_probs1              # “false” branch (original values)
-        ) # Shape (n_chains_per_group,)
-
-        accepts1 = jax.random.uniform(keys[2], shape=(n_chains_per_group,)) < accept_probs1 # Shape (n_chains_per_group,)
+        # Log acceptance probability: min(0, -dH)
+        log_accept_prob1 = jnp.minimum(0.0, -dH1) # Shape (n_chains_per_group,)
+        
+        # Generate log-uniform random numbers
+        log_u1 = jnp.log(jax.random.uniform(keys[2], shape=(n_chains_per_group,), minval=1e-10, maxval=1.0))
+        
+        # Accept if log_u < log_accept_prob (equivalent to u < exp(log_accept_prob))
+        accepts1 = log_u1 < log_accept_prob1 # Shape (n_chains_per_group,)
         
         # Update states - VECTORIZED
         updated_group1_states = jnp.where(accepts1[:, None], q1, states[group1_indices])
@@ -410,7 +408,7 @@ def hamiltonian_side_move(potential_func,
         # Store current state and energy
         current_q2 = states[group2_indices].copy()
         current_U2 = potential_func_vmap(current_q2)
-        current_K2 = jnp.clip(0.5 * p2**2, 0, 1000)
+        current_K2 = 0.5 * p2**2
 
         # Leapfrog integration with preconditioning
         # q2 = current_q2.copy()
@@ -428,23 +426,19 @@ def hamiltonian_side_move(potential_func,
 
         # Compute proposed energy
         proposed_U2 = potential_func_vmap(q2)
-        proposed_K2 = jnp.clip(0.5 * p2_current**2, 0, 1000)
+        proposed_K2 = 0.5 * p2_current**2
 
-        # Metropolis acceptance - IMPROVED FOR NUMERICAL STABILITY
+        # Metropolis acceptance in log scale for numerical stability
         dH2 = (proposed_U2 + proposed_K2) - (current_U2 + current_K2)
-
-        # Calculate acceptance probabilities with numerical safeguards for exp
-        accept_probs2 = jnp.ones_like(dH2)  # Default to accept
-        # Only calculate exp for positive dH (negative cases auto-accept with prob 1.0)
-        exp_needed = dH2 > 0
-        safe_dH = jnp.clip(dH2, a_min=None, a_max=100.0)   # Shape (n_chains_per_group,)
-        accept_probs2 = jnp.where(
-            exp_needed,                # boolean mask
-            jnp.exp(-safe_dH),         # “true” branch (vectorised)
-            accept_probs2              # “false” branch (original values)
-        ) # Shape (n_chains_per_group,)
         
-        accepts2 = jax.random.uniform(keys[5], shape=(n_chains_per_group,)) < accept_probs2
+        # Log acceptance probability: min(0, -dH)
+        log_accept_prob2 = jnp.minimum(0.0, -dH2)
+        
+        # Generate log-uniform random numbers
+        log_u2 = jnp.log(jax.random.uniform(keys[5], shape=(n_chains_per_group,), minval=1e-10, maxval=1.0))
+        
+        # Accept if log_u < log_accept_prob (equivalent to u < exp(log_accept_prob))
+        accepts2 = log_u2 < log_accept_prob2
 
         # Update states - VECTORIZED
         updated_group2_states = jnp.where(accepts2[:, None], q2, states[group2_indices])
@@ -467,48 +461,94 @@ def hamiltonian_side_move(potential_func,
 # Hamiltonian Walk Move (HWM)
 ########################################################
 
-def leapfrog_walk_move(q, 
-                       p, 
-                       grad_fn, 
-                       beta_eps, 
-                       L,
-                       centered):
+def leapfrog_walk_move(q: jnp.ndarray, 
+                       p: jnp.ndarray, 
+                       grad_fn: Callable, 
+                       beta_eps: float, 
+                       L: int,
+                       centered: jnp.ndarray):
     '''
-    
+    Args:
+        q: Shape (n_chains_per_group, dim)
+        p: Shape (n_chinas_per_group, n_chains_per_group)
+        grad_fn: Gradient of log probabiltiy vectorized. Maps (batch_size, dim) -> (batch_size, dim)
+        beta_eps: beta times step size (epsilon)
+        L: Number of steps
+        centered: Shape (n_chains_per_group, dim)
     '''
     grad = grad_fn(q) # Shape (n_chains_per_group, dim)
     grad = jnp.nan_to_num(grad, nan=0.0) 
 
-    p -= 0.5 * beta_eps * jnp.einsum('ik,jk->ij', grad, centered) # Shape (n_chains_per_group, n_chains_per_group)
+    p -= 0.5 * beta_eps * jnp.dot(grad, centered.T) # Shape (n_chains_per_group, n_chains_per_group)
    
 
     for step in range(L):
-        q += beta_eps * jnp.einsum('ik,kj->ij', p, centered) # Shape (n_chains_per_group, dim)
+        q += beta_eps * jnp.dot(p, centered) # Shape (n_chains_per_group, dim)
 
         if (step < L - 1):
             grad = grad_fn(q) # Shape (n_chains_per_group, dim)
             grad = jnp.nan_to_num(grad, nan=0.0)
 
-            p -= 0.5 * beta_eps * jnp.einsum('ik,jk->ij', grad, centered)
+            p -= beta_eps * jnp.dot(grad, centered.T)
 
     grad = grad_fn(q) # Shape (n_chains_per_group, dim)
     grad = jnp.nan_to_num(grad, nan=0.0)
 
-    p -= 0.5 * beta_eps * jnp.einsum('ik,jk->ij', grad, centered)
+    p -= 0.5 * beta_eps * jnp.dot(grad, centered.T)
 
     return q, p
+
+# def leapfrog_walk_move(q: jnp.ndarray, 
+#                        p: jnp.ndarray, 
+#                        grad_fn: Callable, 
+#                        beta_eps: float, 
+#                        L: int,
+#                        centered: jnp.ndarray):
+#     '''
+#     Args:
+#         q: Shape (n_chains_per_group, dim)
+#         p: Shape (n_chinas_per_group, n_chains_per_group)
+#         grad_fn: Gradient of log probabiltiy vectorized. Maps (batch_size, dim) -> (batch_size, dim)
+#         beta_eps: beta times step size (epsilon)
+#         L: Number of steps
+#         centered: Shape (n_chains_per_group, dim)
+#     '''
+
+#     grad = grad_fn(q)
+#     grad = jnp.nan_to_num(grad, nan=0.0) 
+
+#     p -= 0.5 * beta_eps * jnp.dot(grad, centered.T)
+
+#     for step in range(L):
+#         q += beta_eps * jnp.dot(p, centered)
+
+#         if (step < L - 1):
+#             grad = grad_fn(q)
+#             grad = jnp.nan_to_num(grad, nan=0.0)
+
+#             p -= beta_eps * jnp.dot(grad, centered.T)
+    
+#     grad = grad_fn(q)
+#     grad = jnp.nan_to_num(grad, nan=0.0) 
+
+#     p -= 0.5 * beta_eps * jnp.dot(grad, centered)
+
+#     return q, p
+
+
+
 
     
 
 
-def hamiltonian_walk_move(potential_func, 
-                          initial, 
-                          n_samples, 
-                          grad_fn = None,
-                          n_chains_per_group=5, 
-                          epsilon=0.01, 
-                          L=10, 
-                          beta=0.05,
+def hamiltonian_walk_move(potential_func: Callable, 
+                          initial: jnp.ndarray, 
+                          n_samples: int, 
+                          grad_fn: Callable = None,
+                          n_chains_per_group: int = 5, 
+                          epsilon: float = 0.01, 
+                          L: int = 10, 
+                          beta: float = 0.05,
                           n_thin=1,
                           key=jax.random.PRNGKey(0)):
     """
@@ -556,43 +596,41 @@ def hamiltonian_walk_move(potential_func,
         # Group 1
         ########################################################
 
-        centered2 = (q1 - jnp.mean(q2, axis=0)[None, :]) / jnp.sqrt(n_chains_per_group) # Shape (n_chains_per_group, dim)
+        centered2 = (q2 - jnp.mean(q2, axis=0)[None, :]) / jnp.sqrt(n_chains_per_group) # Shape (n_chains_per_group, dim)
 
         # Random Momentum
-        p1 = jax.random.normal(keys[0], shape=(n_chains_per_group, n_chains_per_group))
-        p1_current = p1.copy()
+        p1_current = jax.random.normal(keys[0], shape=(n_chains_per_group, n_chains_per_group))
 
         # Current Energy
         current_U1 = potential_func_vmap(q1_current) # Shape (n_chains_per_group,)
-        current_K1 = jnp.clip(0.5 * jnp.sum(p1_current**2, axis=1), 0, 1000) # Shape (n_chains_per_group,)
+        current_K1 = 0.5 * jnp.sum(p1_current**2, axis=1) # Shape (n_chains_per_group,)
 
         # Leapfrog Integration
         q1_proposed, p1_proposed = leapfrog_walk_move(
-            q1, 
-            p1, 
+            q1_current, 
+            p1_current, 
             grad_fn_vmap, 
             beta_eps, 
             L, 
             centered2
         )
         proposed_U1 = potential_func_vmap(q1_proposed)
-        proposed_K1 = jnp.clip(0.5 * jnp.sum(p1_proposed**2, axis=1), 0, 1000) # Shape (n_chains_per_group,)
+        proposed_K1 = 0.5 * jnp.sum(p1_proposed**2, axis=1) # Shape (n_chains_per_group,)
 
-        # Metropolis Step
+        # Metropolis Step in log scale for numerical stability
         dH1 = (proposed_U1 + proposed_K1) - (current_U1 + current_K1)
-
-        exp_needed = dH1 > 0
-        safe_dH = jnp.clip(dH1, a_min=None, a_max=100.0)
-        accept_probs1 = jnp.where(
-            exp_needed,
-            jnp.exp(-safe_dH),
-            jnp.ones_like(dH1)
-        )
-
-        accepts1 = jax.random.uniform(keys[1], shape=(n_chains_per_group,)) < accept_probs1
+        
+        # Log acceptance probability: min(0, -dH)
+        log_accept_prob1 = jnp.minimum(0.0, -dH1)
+        
+        # Generate log-uniform random numbers
+        log_u1 = jnp.log(jax.random.uniform(keys[1], shape=(n_chains_per_group,), minval=1e-10, maxval=1.0))
+        
+        # Accept if log_u < log_accept_prob (equivalent to u < exp(log_accept_prob))
+        accepts1 = log_u1 < log_accept_prob1
 
         # Log Changes
-        accepts_group1 += accepts1
+        accepts_group1 += accepts1.astype(int)
         states_group1 = jnp.where(accepts1[:, None], q1_proposed, states_group1)
 
 
@@ -600,43 +638,41 @@ def hamiltonian_walk_move(potential_func,
         # Group 2
         ########################################################
 
-        centered1 = (q2 - jnp.mean(q1, axis=0)) / jnp.sqrt(n_chains_per_group) # Shape (n_chains_per_group, dim)
+        centered1 = (q1 - jnp.mean(q1, axis=0)) / jnp.sqrt(n_chains_per_group) # Shape (n_chains_per_group, dim)
 
         # Random Momentum
-        p2 = jax.random.normal(keys[2], shape=(n_chains_per_group, n_chains_per_group))
-        p2_current = p2.copy()
+        p2_current = jax.random.normal(keys[2], shape=(n_chains_per_group, n_chains_per_group))
 
         # Current Energy
         current_U2 = potential_func_vmap(q2_current)
-        current_K2 = jnp.clip(0.5 * jnp.sum(p2_current**2, axis=1), 0, 1000) # Shape (n_chains_per_group,)
+        current_K2 = 0.5 * jnp.sum(p2_current**2, axis=1) # Shape (n_chains_per_group,)
 
         # Leapfrog Integration
         q2_proposed, p2_proposed = leapfrog_walk_move(
-            q2, 
-            p2, 
+            q2_current, 
+            p2_current, 
             grad_fn_vmap, 
             beta_eps, 
             L, 
             centered1
         )
         proposed_U2 = potential_func_vmap(q2_proposed)
-        proposed_K2 = jnp.clip(0.5 * jnp.sum(p2_proposed**2, axis=1), 0, 1000) # Shape (n_chains_per_group,)
+        proposed_K2 = 0.5 * jnp.sum(p2_proposed**2, axis=1) # Shape (n_chains_per_group,)
 
-        # Metropolis Step
+        # Metropolis Step in log scale for numerical stability
         dH2 = (proposed_U2 + proposed_K2) - (current_U2 + current_K2)
-
-        exp_needed = dH2 > 0
-        safe_dH = jnp.clip(dH2, a_min=None, a_max=100.0)
-        accept_probs2 = jnp.where(
-            exp_needed,
-            jnp.exp(-safe_dH),
-            jnp.ones_like(dH2)
-        )
-
-        accepts2 = jax.random.uniform(keys[3], shape=(n_chains_per_group,)) < accept_probs2
+        
+        # Log acceptance probability: min(0, -dH)
+        log_accept_prob2 = jnp.minimum(0.0, -dH2)
+        
+        # Generate log-uniform random numbers
+        log_u2 = jnp.log(jax.random.uniform(keys[3], shape=(n_chains_per_group,), minval=1e-10, maxval=1.0))
+        
+        # Accept if log_u < log_accept_prob (equivalent to u < exp(log_accept_prob))
+        accepts2 = log_u2 < log_accept_prob2
 
         # Log Changes
-        accepts_group2 += accepts2
+        accepts_group2 += accepts2.astype(int)
         states_group2 = jnp.where(accepts2[:, None], q2_proposed, states_group2)
 
         ########################################################
