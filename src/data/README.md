@@ -10,3 +10,7 @@ It saves the data as a `data.pkl` file.
 ```
 python rv.py --slice=<WHICH_16_RVs?> --filename=<PATH_TO_data.pkl>
 ```
+
+# GUI
+Use Jupyter Notebook at a proxy for exploring the 
+data in a more interactive way. I have this in` rv_explorer.ipynb`
