@@ -4,7 +4,10 @@
 - [SDSS-V Wiki](https://sdss-wiki.atlassian.net/)
 
 # Todo
+- Hogg wants a corner plot of the parameters on the posterior
+- Hogg wants 16 samples of the posterior (so that means you choose these $\theta$s), so then choose these and plot it as (RV vs JD) (black is data, faint red is our samples, Joker is faint blue)
 
+# Todo Old
 # Jonathan (on measure transport & NNs)
 - I wonder if there's a way that you can paramterize your neural network using canonical transformation. These transformation are volume perserving, so we can construct a NN which is volume perserving.
 
@@ -22,3 +25,4 @@
 ## Reading
 - Read Wang & Landau sampling
 - Read Boltzmann Generator by Frank Noe (method of paramterizing NNs for distributions)
+
