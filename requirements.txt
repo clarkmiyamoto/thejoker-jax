@@ -5,3 +5,4 @@ numpyro
 jaxoplanet
 fitsio
 sdss-access
+astroquery
