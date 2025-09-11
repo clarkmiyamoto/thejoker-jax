@@ -15,14 +15,9 @@ def get_apstarId(visits: int=7, top: int=50):
     - res. Has columns 'apogee_id', 'apstar_id'
   '''
   query = f"""
-  SELECT TOP {str(top)} s.apogee_id, s.apstar_id
+  SELECT TOP {str(top)} s.apogee_id, s.apstar_id, s.nvisits
   FROM apogeeStar AS s
-  WHERE s.apstar_id IN (
-    SELECT sav.apstar_id
-    FROM apogeeStarAllVisit AS sav
-    GROUP BY sav.apstar_id
-    HAVING COUNT(*) > {visits}
-  )
+  WHERE s.nvisits > 7
   """
   res = SDSS.query_sql(query, data_release=19)
 
@@ -136,19 +131,23 @@ if __name__ == "__main__":
         # Get data from each visit
         jd = []
         vhelio = []
+        vrelerr = []
         for visit_id in visit_ids:
             res = get_rvs_from_visit_id(visit_id)
             jd.append(res['jd'])
             vhelio.append(res['vhelio'])
+            vrelerr.append(res['vrelerr']) # HACK: don't do this... Too hardcoded...
 
         # Convert to numpy arrays
-        jd = np.array(jd)
-        vhelio = np.array(vhelio)
+        jd = np.array(jd).flatten()
+        vhelio = np.array(vhelio).flatten()
+        vrelerr = np.array(vrelerr).flatten()
 
         # Log data
         data[apstar_id] = {
             'jd' : jd,
-            'vhelio' : vhelio
+            'vhelio' : vhelio,
+            'vrelerr' : vrelerr
         }
 
     # Save data

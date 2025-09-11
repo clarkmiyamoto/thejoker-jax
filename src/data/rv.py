@@ -26,6 +26,15 @@ def load_data(filename: str) -> dict:
     return data
 
 
+def remove_999(data: np.ndarray) -> np.ndarray:
+    '''
+    Removes 999 from data
+    '''
+    new_data = data.copy().astype(float)
+    trigger = new_data == -9999.
+    new_data[trigger] = np.nan
+    return new_data
+
 def _parseargs():
     '''
     Parses arguments
@@ -49,6 +58,8 @@ if __name__ == "__main__":
     slicer = args.slice # Push forward window by this amoutn
     idx_pluser = (4 * 4) * slicer
 
+    fiducial_jd = 2457388.5
+
     # Plot data in a 4 x 4 grid
     fig, axes = plt.subplots(4, 4, figsize=(15, 10))
 
@@ -57,13 +68,14 @@ if __name__ == "__main__":
         apstar_id = list(data.keys())[idx + idx_pluser]
 
         # Get data
-        entry = list(data.values())[idx + idx_pluser]
+        entry = data[apstar_id]
         jd = entry['jd']
-        vhelio = entry['vhelio']
+        vhelio = remove_999(entry['vhelio'])
+        vrelerr = remove_999(entry['vrelerr'])
 
-        ax.scatter(jd, vhelio, color='black', s=10)
+        ax.errorbar(jd - fiducial_jd, vhelio, yerr=vrelerr, color='black', linestyle=' ', marker='o')
         ax.set_title(f'{apstar_id}', fontsize=8)
-        ax.set_xlabel('JD')
+        ax.set_xlabel(f'JD - {fiducial_jd}')
         ax.set_ylabel('vhelio')
 
     plt.tight_layout()
