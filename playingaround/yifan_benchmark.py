@@ -17,13 +17,14 @@ def compare_jax_numpy():
     """Simple comparison of JAX vs NumPy for 50D case"""
 
     # Setup
+    seed = 100
     dim = 20
     n_samples = 1000
     burn_in = 4000
     total_samples = n_samples + burn_in
 
     # Create problem
-    np.random.seed(200)
+    np.random.seed(seed)
     cond_number = 1000
     eigenvals = 0.1 * np.linspace(1, cond_number, dim)
     H = np.random.randn(dim, dim)
@@ -62,7 +63,7 @@ def compare_jax_numpy():
 
     # Run NumPy
     try:
-        from src.sampler_numpy import hamiltonian_walk_move as hwm_np
+        from src.sampler_numpy import hamiltonian_side_move as hwm_np
         start = time.time()
         samples_np, acc_np = hwm_np(gradient_np, potential_np, initial, total_samples, **params)
         time_np = time.time() - start
@@ -79,8 +80,8 @@ def compare_jax_numpy():
 
     # Run JAX
     try:
-        from src.sampler_jax import hamiltonian_walk_move as hwm_jax
-        key = random.PRNGKey(42)
+        from src.sampler_jax import hamiltonian_side_move as hwm_jax
+        key = random.PRNGKey(seed)
         start = time.time()
         samples_jax, acc_jax = hwm_jax(
             potential_jax, jnp.array(initial), total_samples, gradient_jax,
