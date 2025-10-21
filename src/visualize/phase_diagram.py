@@ -1,15 +1,12 @@
-'''
-Visualize simulated radial velocity data with a given set of parameters.
-'''
 import jax
 import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.widgets import Slider, TextBox, Button
-import matplotlib.gridspec as gridspec
-
+import ipywidgets as widgets
+from IPython.display import display
 import sys
 import os
+
 parent_dir = os.path.abspath(os.path.join(os.getcwd(), '..'))
 sys.path.append(parent_dir)
 
@@ -19,7 +16,7 @@ from velocity import velocity
 jax.config.update("jax_enable_x64", True)
 
 
-def generate_clustered_observations(total_time, n_clusters, obs_per_cluster, cluster_width):
+def generate_clustered_observations(total_time, n_clusters, obs_per_cluster, cluster_width, seed=42):
     """
     Generate observation times in clusters (similar to real observing runs).
     
@@ -28,10 +25,13 @@ def generate_clustered_observations(total_time, n_clusters, obs_per_cluster, clu
     - n_clusters: Number of observation clusters
     - obs_per_cluster: Number of observations per cluster
     - cluster_width: Width of each cluster (days)
+    - seed: Random seed for reproducibility
     
     Returns:
     - time_obs: Array of observation times
     """
+    np.random.seed(seed)
+    
     # Generate cluster centers
     cluster_centers = np.sort(np.random.uniform(0, total_time, n_clusters))
     
@@ -48,7 +48,7 @@ def generate_clustered_observations(total_time, n_clusters, obs_per_cluster, clu
     return np.array(time_obs)
 
 
-def generate_rv_data(time_obs, period, eccentricity, omega, phi0, K, v0, sigma):
+def generate_rv_data(time_obs, period, eccentricity, omega, phi0, K, v0, sigma, seed=42):
     """
     Generate radial velocity data with noise.
     
@@ -61,6 +61,7 @@ def generate_rv_data(time_obs, period, eccentricity, omega, phi0, K, v0, sigma):
     - K: Semi-amplitude of velocity (m/s)
     - v0: Systemic velocity offset (m/s)
     - sigma: RV uncertainty (m/s)
+    - seed: Random seed for reproducibility
     
     Returns:
     - time_obs: Observation times
@@ -68,6 +69,8 @@ def generate_rv_data(time_obs, period, eccentricity, omega, phi0, K, v0, sigma):
     - rv_err: RV uncertainties
     - rv_true: True radial velocities (no noise)
     """
+    np.random.seed(seed)
+    
     # Generate true RV curve
     rv_true = velocity(time_obs, period, eccentricity, omega, phi0, K, v0)
     
@@ -78,276 +81,11 @@ def generate_rv_data(time_obs, period, eccentricity, omega, phi0, K, v0, sigma):
     return time_obs, rv_obs, rv_err, rv_true
 
 
-class InteractiveRVPlot:
+def plot_rv_data(time_obs, rv_obs, rv_err, time_true, rv_true, period, eccentricity, K, sigma):
     """
-    Interactive GUI class for radial velocity data visualization.
+    Plot radial velocity data with current parameters in title.
     """
-    
-    def __init__(self):
-        # Default parameter values
-        self.period = 100.0
-        self.eccentricity = 0.5
-        self.omega = 1.0
-        self.phi0 = 1.0
-        self.v0 = 0.0
-        self.n_clusters = 5
-        self.obs_per_cluster = 5
-        self.cluster_width = 10.0
-        self.seed = 42
-        
-        # Ratio parameters (controlled by sliders)
-        self.time_period_ratio = 1.0  # total_time / period
-        self.K_sigma_ratio = 4.0       # K / sigma
-        
-        # Derived parameters
-        self.total_time = self.period * self.time_period_ratio
-        self.sigma = 5.0
-        self.K = self.sigma * self.K_sigma_ratio
-        
-        # Set random seed
-        np.random.seed(self.seed)
-        
-        # Create figure and layout
-        self.fig = plt.figure(figsize=(14, 10))
-        gs = gridspec.GridSpec(3, 4, height_ratios=[3, 1, 1], width_ratios=[3, 1, 1, 1])
-        
-        # Main plot area
-        self.ax = self.fig.add_subplot(gs[0, :2])
-        
-        # Sliders area
-        self.ax_sliders = self.fig.add_subplot(gs[1, :2])
-        self.ax_sliders.axis('off')
-        
-        # Text boxes area
-        self.ax_text = self.fig.add_subplot(gs[0, 2:])
-        self.ax_text.axis('off')
-        
-        # Initialize plot
-        self.update_plot()
-        self.setup_widgets()
-        
-    def setup_widgets(self):
-        """Set up all the interactive widgets."""
-        
-        # Sliders
-        slider_height = 0.02
-        slider_width = 0.3
-        
-        # Time/Period ratio slider
-        ax_time_ratio = plt.axes([0.1, 0.25, slider_width, slider_height])
-        self.slider_time_ratio = Slider(ax_time_ratio, 'Time/Period', 0.01, 5.0, 
-                                       valinit=self.time_period_ratio, valfmt='%.2f')
-        self.slider_time_ratio.on_changed(self.update_time_ratio)
-        
-        # K/Sigma ratio slider
-        ax_K_ratio = plt.axes([0.1, 0.20, slider_width, slider_height])
-        self.slider_K_ratio = Slider(ax_K_ratio, 'K/σ', 0.5, 20.0, 
-                                    valinit=self.K_sigma_ratio, valfmt='%.2f')
-        self.slider_K_ratio.on_changed(self.update_K_ratio)
-        
-        # Text boxes for other parameters
-        text_y_start = 0.85
-        text_x_start = 0.7  # Moved slightly to the right
-        text_height = 0.05
-        text_width = 0.15
-        
-        # Period
-        ax_period = plt.axes([text_x_start, text_y_start, text_width, text_height])
-        self.text_period = TextBox(ax_period, 'Period (d): ', initial=str(self.period))
-        self.text_period.on_submit(self.update_period)
-        
-        # Eccentricity
-        ax_ecc = plt.axes([text_x_start, text_y_start - 0.08, text_width, text_height])
-        self.text_ecc = TextBox(ax_ecc, 'Eccentricity: ', initial=str(self.eccentricity))
-        self.text_ecc.on_submit(self.update_eccentricity)
-        
-        # Omega
-        ax_omega = plt.axes([text_x_start, text_y_start - 0.16, text_width, text_height])
-        self.text_omega = TextBox(ax_omega, 'Omega (rad): ', initial=str(self.omega))
-        self.text_omega.on_submit(self.update_omega)
-        
-        # Phi0
-        ax_phi0 = plt.axes([text_x_start, text_y_start - 0.24, text_width, text_height])
-        self.text_phi0 = TextBox(ax_phi0, 'Phi0 (rad): ', initial=str(self.phi0))
-        self.text_phi0.on_submit(self.update_phi0)
-        
-        # v0
-        ax_v0 = plt.axes([text_x_start, text_y_start - 0.32, text_width, text_height])
-        self.text_v0 = TextBox(ax_v0, 'v0 (m/s): ', initial=str(self.v0))
-        self.text_v0.on_submit(self.update_v0)
-        
-        # Number of clusters
-        ax_clusters = plt.axes([text_x_start, text_y_start - 0.40, text_width, text_height])
-        self.text_clusters = TextBox(ax_clusters, 'Clusters: ', initial=str(self.n_clusters))
-        self.text_clusters.on_submit(self.update_clusters)
-        
-        # Observations per cluster
-        ax_obs_per = plt.axes([text_x_start, text_y_start - 0.48, text_width, text_height])
-        self.text_obs_per = TextBox(ax_obs_per, 'Obs/cluster: ', initial=str(self.obs_per_cluster))
-        self.text_obs_per.on_submit(self.update_obs_per_cluster)
-        
-        # Cluster width
-        ax_cluster_width = plt.axes([text_x_start, text_y_start - 0.56, text_width, text_height])
-        self.text_cluster_width = TextBox(ax_cluster_width, 'Cluster width (d): ', initial=str(self.cluster_width))
-        self.text_cluster_width.on_submit(self.update_cluster_width)
-        
-        # Random seed
-        ax_seed = plt.axes([text_x_start, text_y_start - 0.64, text_width, text_height])
-        self.text_seed = TextBox(ax_seed, 'Seed: ', initial=str(self.seed))
-        self.text_seed.on_submit(self.update_seed)
-        
-        # Update button
-        ax_update = plt.axes([text_x_start, text_y_start - 0.72, text_width, text_height])
-        self.button_update = Button(ax_update, 'Update')
-        self.button_update.on_clicked(self.update_plot)
-        
-    def update_time_ratio(self, val):
-        """Update time/period ratio and regenerate data."""
-        self.time_period_ratio = val
-        self.total_time = self.period * self.time_period_ratio
-        self.update_plot()
-        
-    def update_K_ratio(self, val):
-        """Update K/sigma ratio and regenerate data."""
-        self.K_sigma_ratio = val
-        self.K = self.sigma * self.K_sigma_ratio
-        self.update_plot()
-        
-    def update_period(self, text):
-        """Update period and regenerate data."""
-        try:
-            self.period = float(text)
-            self.total_time = self.period * self.time_period_ratio
-            self.update_plot()
-        except ValueError:
-            pass
-            
-    def update_eccentricity(self, text):
-        """Update eccentricity and regenerate data."""
-        try:
-            val = float(text)
-            if 0 <= val < 1:
-                self.eccentricity = val
-                self.update_plot()
-        except ValueError:
-            pass
-            
-    def update_omega(self, text):
-        """Update omega and regenerate data."""
-        try:
-            self.omega = float(text)
-            self.update_plot()
-        except ValueError:
-            pass
-            
-    def update_phi0(self, text):
-        """Update phi0 and regenerate data."""
-        try:
-            self.phi0 = float(text)
-            self.update_plot()
-        except ValueError:
-            pass
-            
-    def update_v0(self, text):
-        """Update v0 and regenerate data."""
-        try:
-            self.v0 = float(text)
-            self.update_plot()
-        except ValueError:
-            pass
-            
-    def update_clusters(self, text):
-        """Update number of clusters and regenerate data."""
-        try:
-            val = int(text)
-            if val > 0:
-                self.n_clusters = val
-                self.update_plot()
-        except ValueError:
-            pass
-            
-    def update_obs_per_cluster(self, text):
-        """Update observations per cluster and regenerate data."""
-        try:
-            val = int(text)
-            if val > 0:
-                self.obs_per_cluster = val
-                self.update_plot()
-        except ValueError:
-            pass
-            
-    def update_cluster_width(self, text):
-        """Update cluster width and regenerate data."""
-        try:
-            val = float(text)
-            if val > 0:
-                self.cluster_width = val
-                self.update_plot()
-        except ValueError:
-            pass
-            
-    def update_seed(self, text):
-        """Update random seed and regenerate data."""
-        try:
-            self.seed = int(text)
-            np.random.seed(self.seed)
-            self.update_plot()
-        except ValueError:
-            pass
-        
-    def update_plot(self, event=None):
-        """Update the plot with current parameters."""
-        # Clear the plot
-        self.ax.clear()
-        
-        # Generate new data
-        time_obs = generate_clustered_observations(
-            self.total_time, self.n_clusters, self.obs_per_cluster, self.cluster_width
-        )
-        
-        time_obs, rv_obs, rv_err, rv_true = generate_rv_data(
-            time_obs, self.period, self.eccentricity, self.omega, 
-            self.phi0, self.K, self.v0, self.sigma
-        )
-        
-        # Generate smooth curve for plotting
-        time_true = np.linspace(0, self.total_time, 500)
-        rv_true_smooth = velocity(time_true, self.period, self.eccentricity, 
-                                self.omega, self.phi0, self.K, self.v0)
-        
-        # Plot true RV curve in blue
-        self.ax.plot(time_true, rv_true_smooth, 'b-', linewidth=2, label='True RV Curve')
-        
-        # Plot observed velocities as black scatter plot with error bars
-        self.ax.errorbar(time_obs, rv_obs, yerr=rv_err, fmt='ko', 
-                        capsize=3, capthick=1, markersize=4, label='Observed Data')
-        
-        # Formatting
-        self.ax.set_xlabel('Time (days)')
-        self.ax.set_ylabel('Radial Velocity (m/s)')
-        self.ax.legend()
-        self.ax.grid(True, alpha=0.3)
-        
-        # Update the display
-        self.fig.canvas.draw()
-        
-    def show(self):
-        """Show the interactive plot."""
-        plt.show()
-
-
-def plot_rv_data(time_obs, rv_obs, rv_err, time_true, rv_true):
-    """
-    Plot radial velocity data (non-interactive version).
-    
-    Parameters:
-    - time_obs: Observation times
-    - rv_obs: Observed radial velocities
-    - rv_err: RV uncertainties
-    - time_true: Time array for true curve
-    - rv_true: True radial velocity curve
-    """
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(12, 8))
     
     # Plot true RV curve in blue
     plt.plot(time_true, rv_true, 'b-', linewidth=2, label='True RV Curve')
@@ -358,20 +96,296 @@ def plot_rv_data(time_obs, rv_obs, rv_err, time_true, rv_true):
     
     plt.xlabel('Time (days)')
     plt.ylabel('Radial Velocity (m/s)')
-    plt.title('Radial Velocity Data')
+    plt.title(f'RV Data: P={period:.1f}d, e={eccentricity:.2f}, '
+             f'K={K:.1f}m/s, σ={sigma:.1f}m/s')
     plt.legend()
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.show()
 
 
+def interactive_rv_plot(time_period_ratio, K_sigma_ratio, period, eccentricity, omega, phi0, v0, 
+                       n_clusters, obs_per_cluster, cluster_width, seed):
+    """
+    Interactive function for ipywidgets.interact.
+    
+    Parameters:
+    - time_period_ratio: Ratio of total observation time to period
+    - K_sigma_ratio: Ratio of amplitude to uncertainty
+    - period: Orbital period (days)
+    - eccentricity: Orbital eccentricity
+    - omega: Argument of periastron (radians)
+    - phi0: Phase offset (radians)
+    - v0: Systemic velocity offset (m/s)
+    - n_clusters: Number of observation clusters
+    - obs_per_cluster: Number of observations per cluster
+    - cluster_width: Width of each cluster (days)
+    - seed: Random seed
+    """
+    # Calculate derived parameters
+    total_time = period * time_period_ratio
+    sigma = 5.0  # Fixed uncertainty
+    K = sigma * K_sigma_ratio
+    
+    # Generate clustered observation times
+    time_obs = generate_clustered_observations(
+        total_time, n_clusters, obs_per_cluster, cluster_width, seed
+    )
+    
+    # Generate RV data
+    time_obs, rv_obs, rv_err, rv_true = generate_rv_data(
+        time_obs, period, eccentricity, omega, phi0, K, v0, sigma, seed
+    )
+    
+    # Generate smooth curve for plotting
+    time_true = np.linspace(0, total_time, 500)
+    rv_true_smooth = velocity(time_true, period, eccentricity, omega, phi0, K, v0)
+    
+    # Plot the data
+    plot_rv_data(time_obs, rv_obs, rv_err, time_true, rv_true_smooth, 
+                period, eccentricity, K, sigma)
+    
+    # Print summary
+    print(f"Generated {len(time_obs)} observations over {total_time:.1f} days")
+    print(f"Orbital parameters: P={period:.1f}d, e={eccentricity:.2f}, ω={omega:.2f}rad, φ₀={phi0:.2f}rad")
+    print(f"RV parameters: K={K:.1f}m/s, v₀={v0:.1f}m/s, σ={sigma:.1f}m/s")
+    print(f"Observation setup: {n_clusters} clusters, {obs_per_cluster} obs/cluster, {cluster_width:.1f}d width")
+
+
+def create_interactive_widgets():
+    """
+    Create and display the interactive widgets for RV data visualization.
+    """
+    # Create widgets
+    time_period_ratio_widget = widgets.FloatSlider(
+        value=3.33,
+        min=0.5,
+        max=10.0,
+        step=0.1,
+        description='Time/Period:',
+        style={'description_width': 'initial'},
+        layout=widgets.Layout(width='300px')
+    )
+    
+    K_sigma_ratio_widget = widgets.FloatSlider(
+        value=4.0,
+        min=0.5,
+        max=20.0,
+        step=0.1,
+        description='K/σ:',
+        style={'description_width': 'initial'},
+        layout=widgets.Layout(width='300px')
+    )
+    
+    period_widget = widgets.FloatText(
+        value=3.0,
+        description='Period (d):',
+        style={'description_width': 'initial'},
+        layout=widgets.Layout(width='200px')
+    )
+    
+    eccentricity_widget = widgets.FloatSlider(
+        value=0.5,
+        min=0.0,
+        max=0.99,
+        step=0.01,
+        description='Eccentricity:',
+        style={'description_width': 'initial'},
+        layout=widgets.Layout(width='300px')
+    )
+    
+    omega_widget = widgets.FloatSlider(
+        value=1.0,
+        min=0.0,
+        max=2*np.pi,
+        step=0.1,
+        description='Omega (rad):',
+        style={'description_width': 'initial'},
+        layout=widgets.Layout(width='300px')
+    )
+    
+    phi0_widget = widgets.FloatSlider(
+        value=1.0,
+        min=0.0,
+        max=2*np.pi,
+        step=0.1,
+        description='Phi0 (rad):',
+        style={'description_width': 'initial'},
+        layout=widgets.Layout(width='300px')
+    )
+    
+    v0_widget = widgets.FloatText(
+        value=0.0,
+        description='v0 (m/s):',
+        style={'description_width': 'initial'},
+        layout=widgets.Layout(width='200px')
+    )
+    
+    n_clusters_widget = widgets.IntSlider(
+        value=3,
+        min=1,
+        max=10,
+        step=1,
+        description='Clusters:',
+        style={'description_width': 'initial'},
+        layout=widgets.Layout(width='300px')
+    )
+    
+    obs_per_cluster_widget = widgets.IntSlider(
+        value=5,
+        min=1,
+        max=20,
+        step=1,
+        description='Obs/cluster:',
+        style={'description_width': 'initial'},
+        layout=widgets.Layout(width='300px')
+    )
+    
+    cluster_width_widget = widgets.FloatSlider(
+        value=0.5,
+        min=0.1,
+        max=2.0,
+        step=0.1,
+        description='Cluster width (d):',
+        style={'description_width': 'initial'},
+        layout=widgets.Layout(width='300px')
+    )
+    
+    seed_widget = widgets.IntText(
+        value=42,
+        description='Seed:',
+        style={'description_width': 'initial'},
+        layout=widgets.Layout(width='200px')
+    )
+    
+    # Create output widget for the plot
+    output_widget = widgets.Output()
+    
+    # Create a function that updates the plot
+    def update_plot(*args, **kwargs):
+        with output_widget:
+            output_widget.clear_output(wait=True)
+            # Get current values from all widgets
+            interactive_rv_plot(
+                time_period_ratio=time_period_ratio_widget.value,
+                K_sigma_ratio=K_sigma_ratio_widget.value,
+                period=period_widget.value,
+                eccentricity=eccentricity_widget.value,
+                omega=omega_widget.value,
+                phi0=phi0_widget.value,
+                v0=v0_widget.value,
+                n_clusters=n_clusters_widget.value,
+                obs_per_cluster=obs_per_cluster_widget.value,
+                cluster_width=cluster_width_widget.value,
+                seed=seed_widget.value
+            )
+    
+    # Connect all widgets to the update function
+    for widget in [time_period_ratio_widget, K_sigma_ratio_widget, period_widget, 
+                   eccentricity_widget, omega_widget, phi0_widget, v0_widget,
+                   n_clusters_widget, obs_per_cluster_widget, cluster_width_widget, seed_widget]:
+        widget.observe(lambda change: update_plot(), names='value')
+    
+    # Create a layout for the widgets
+    controls_box = widgets.VBox([
+        widgets.HTML("<h3>Main Controls</h3>"),
+        time_period_ratio_widget,
+        K_sigma_ratio_widget,
+        widgets.HTML("<h3>Orbital Parameters</h3>"),
+        period_widget,
+        eccentricity_widget,
+        omega_widget,
+        phi0_widget,
+        v0_widget,
+        widgets.HTML("<h3>Observation Parameters</h3>"),
+        n_clusters_widget,
+        obs_per_cluster_widget,
+        cluster_width_widget,
+        seed_widget
+    ])
+    
+    # Display the controls and output
+    display(controls_box)
+    display(output_widget)
+    
+    # Initial plot
+    update_plot()
+    
+    return controls_box
+
+
 def main():
     """
-    Main function to launch the interactive RV data visualization GUI.
+    Main function to launch the interactive RV data visualization.
     """
-    # Create and show the interactive plot
-    interactive_plot = InteractiveRVPlot()
-    interactive_plot.show()
+    print("Interactive Radial Velocity Data Generator")
+    print("=" * 50)
+    print("Use the sliders and text boxes below to adjust parameters:")
+    print("- Time/Period: Controls how many orbits are observed")
+    print("- K/σ: Controls signal-to-noise ratio")
+    print("- Other parameters: Direct input for orbital and observation settings")
+    print()
+    
+    # Create and display the interactive widgets
+    interactive_widget = create_interactive_widgets()
+    
+    return interactive_widget
+
+
+def main_static():
+    """
+    Static version for generating and plotting RV data with fixed parameters.
+    """
+    # =============================================================================
+    # TUNABLE PARAMETERS - Modify these to change the data generation
+    # =============================================================================
+    
+    # Orbital parameters
+    period = 3.0              # Orbital period (days)
+    eccentricity = 0.5        # Orbital eccentricity (0 <= ecc < 1)
+    omega = 1.0               # Argument of periastron (radians)
+    phi0 = 1.0               # Phase offset (radians)
+    K = 20.0                  # Semi-amplitude of velocity (m/s)
+    v0 = 0.0                  # Systemic velocity offset (m/s)
+    
+    # Observation parameters
+    total_time = 10.0         # Total observation time span (days)
+    n_clusters = 3            # Number of observation clusters
+    obs_per_cluster = 5       # Number of observations per cluster
+    cluster_width = 0.5       # Width of each cluster (days)
+    sigma = 5.0              # RV uncertainty (m/s)
+    seed = 42                 # Random seed
+    
+    # =============================================================================
+    # DATA GENERATION
+    # =============================================================================
+    
+    # Generate clustered observation times
+    time_obs = generate_clustered_observations(
+        total_time, n_clusters, obs_per_cluster, cluster_width, seed
+    )
+    
+    # Generate RV data
+    time_obs, rv_obs, rv_err, rv_true = generate_rv_data(
+        time_obs, period, eccentricity, omega, phi0, K, v0, sigma, seed
+    )
+    
+    # Generate fine time array for smooth true curve
+    time_true = np.linspace(0, total_time, 500)
+    rv_true_smooth = velocity(time_true, period, eccentricity, omega, phi0, K, v0)
+    
+    # =============================================================================
+    # PLOTTING
+    # =============================================================================
+    
+    plot_rv_data(time_obs, rv_obs, rv_err, time_true, rv_true_smooth, 
+                period, eccentricity, K, sigma)
+    
+    # Print summary
+    print(f"Generated {len(time_obs)} observations over {total_time} days")
+    print(f"Orbital parameters: P={period} d, e={eccentricity}, ω={omega} rad, φ₀={phi0} rad")
+    print(f"RV parameters: K={K} m/s, v₀={v0} m/s, σ={sigma} m/s")
+
 
 if __name__ == "__main__":
     main()
