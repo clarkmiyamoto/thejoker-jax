@@ -34,6 +34,10 @@ class LogLikelihood:
         self.velocity_model = velocity_model
 
     def __call__(self, params: jnp.ndarray) -> float:
+        '''
+        Args
+            - params (tuple): in th order (period, eccentricity, omega, phi0, K, v0)
+        '''
         return (
         -0.5 * jnp.sum((self.observed_data - self.velocity_model(params)) ** 2 / (self.uncertainity ** 2 + self.jitter ** 2))
         -0.5 * jnp.sum(jnp.log(2 * jnp.pi * (self.uncertainity ** 2 + self.jitter ** 2)))
