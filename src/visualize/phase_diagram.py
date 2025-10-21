@@ -108,7 +108,7 @@ def interactive_rv_plot(time_period_ratio, K_sigma_ratio, period, eccentricity, 
                        n_clusters, obs_per_cluster, cluster_width, seed):
     """
     Interactive function for ipywidgets.interact.
-    
+
     Parameters:
     - time_period_ratio: Ratio of total observation time to period
     - K_sigma_ratio: Ratio of amplitude to uncertainty
@@ -126,30 +126,45 @@ def interactive_rv_plot(time_period_ratio, K_sigma_ratio, period, eccentricity, 
     total_time = period * time_period_ratio
     sigma = 5.0  # Fixed uncertainty
     K = sigma * K_sigma_ratio
-    
+
     # Generate clustered observation times
     time_obs = generate_clustered_observations(
         total_time, n_clusters, obs_per_cluster, cluster_width, seed
     )
-    
+
     # Generate RV data
     time_obs, rv_obs, rv_err, rv_true = generate_rv_data(
         time_obs, period, eccentricity, omega, phi0, K, v0, sigma, seed
     )
-    
+
     # Generate smooth curve for plotting
     time_true = np.linspace(0, total_time, 500)
     rv_true_smooth = velocity(time_true, period, eccentricity, omega, phi0, K, v0)
-    
+
     # Plot the data
     plot_rv_data(time_obs, rv_obs, rv_err, time_true, rv_true_smooth, 
                 period, eccentricity, K, sigma)
-    
-    # Print summary
-    print(f"Generated {len(time_obs)} observations over {total_time:.1f} days")
-    print(f"Orbital parameters: P={period:.1f}d, e={eccentricity:.2f}, ω={omega:.2f}rad, φ₀={phi0:.2f}rad")
-    print(f"RV parameters: K={K:.1f}m/s, v₀={v0:.1f}m/s, σ={sigma:.1f}m/s")
-    print(f"Observation setup: {n_clusters} clusters, {obs_per_cluster} obs/cluster, {cluster_width:.1f}d width")
+
+    # Print summary accounting for all arguments
+    print(
+        f"Generated {len(time_obs)} observations over {total_time:.1f} days\n"
+        f"Arguments:\n"
+        f"  time_period_ratio = {time_period_ratio}\n"
+        f"  K_sigma_ratio = {K_sigma_ratio}\n"
+        f"  period = {period:.1f} d\n"
+        f"  eccentricity = {eccentricity:.2f}\n"
+        f"  omega = {omega:.2f} rad\n"
+        f"  phi0 = {phi0:.2f} rad\n"
+        f"  v0 = {v0:.1f} m/s\n"
+        f"  n_clusters = {n_clusters}\n"
+        f"  obs_per_cluster = {obs_per_cluster}\n"
+        f"  cluster_width = {cluster_width:.1f} d\n"
+        f"  seed = {seed}\n"
+        f"\nDerived parameters:\n"
+        f"  total_time = {total_time:.1f} d\n"
+        f"  K = {K:.1f} m/s (K = sigma * K_sigma_ratio)\n"
+        f"  sigma = {sigma:.1f} m/s"
+    )
 
 
 def create_interactive_widgets():
