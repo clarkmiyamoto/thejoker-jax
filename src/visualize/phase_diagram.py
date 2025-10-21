@@ -158,10 +158,10 @@ def create_interactive_widgets():
     """
     # Create widgets
     time_period_ratio_widget = widgets.FloatSlider(
-        value=3.33,
-        min=0.5,
-        max=10.0,
-        step=0.1,
+        value=1.0,
+        min=0.01,
+        max=5.0,
+        step=0.05,
         description='Time/Period:',
         style={'description_width': 'initial'},
         layout=widgets.Layout(width='300px')
@@ -169,8 +169,8 @@ def create_interactive_widgets():
     
     K_sigma_ratio_widget = widgets.FloatSlider(
         value=4.0,
-        min=0.5,
-        max=20.0,
+        min=0.01,
+        max=8.0,
         step=0.1,
         description='K/σ:',
         style={'description_width': 'initial'},
@@ -178,7 +178,7 @@ def create_interactive_widgets():
     )
     
     period_widget = widgets.FloatText(
-        value=3.0,
+        value=100.0,
         description='Period (d):',
         style={'description_width': 'initial'},
         layout=widgets.Layout(width='200px')
@@ -242,9 +242,9 @@ def create_interactive_widgets():
     )
     
     cluster_width_widget = widgets.FloatSlider(
-        value=0.5,
+        value=10.0,
         min=0.1,
-        max=2.0,
+        max=50.0,
         step=0.1,
         description='Cluster width (d):',
         style={'description_width': 'initial'},
@@ -304,9 +304,14 @@ def create_interactive_widgets():
         seed_widget
     ])
     
-    # Display the controls and output
-    display(controls_box)
-    display(output_widget)
+    # Create a horizontal layout with plot on left, controls on right
+    main_layout = widgets.HBox([
+        output_widget,
+        controls_box
+    ], layout=widgets.Layout(width='100%', height='600px'))
+    
+    # Display the combined layout
+    display(main_layout)
     
     # Initial plot
     update_plot()
