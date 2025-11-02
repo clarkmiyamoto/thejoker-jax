@@ -1,6 +1,6 @@
 import jax
 import jax.numpy as jnp
-from jaxoplanet.core import kepler
+from .kepler import kepler
 ################################################################################
 # Solving Kepler's Equation smartly by implementing `jaxoplanets`
 # See https://jax.exoplanet.codes/en/latest/tutorials/core-from-scratch/.
