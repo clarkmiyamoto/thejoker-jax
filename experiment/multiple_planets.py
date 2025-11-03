@@ -232,7 +232,13 @@ def calculate_init_bounds(true_params: dict, coverage_fraction: float):
     
     return bounds
 
-def plots(samples: jnp.ndarray, log_probs: jnp.ndarray, times: jnp.ndarray, rv_obs: jnp.ndarray, rv_err: jnp.ndarray, n_planets: int = 2):
+def plots(samples: jnp.ndarray, 
+          log_probs: jnp.ndarray, 
+          times: jnp.ndarray, 
+          rv_obs: jnp.ndarray, 
+          rv_err: jnp.ndarray, 
+          n_planets: int,
+          filename: str):
     # Reshape samples for analysis
     flat_samples = samples.reshape(-1, samples.shape[-1])
     flat_log_probs = log_probs.reshape(-1)
@@ -270,7 +276,7 @@ def plots(samples: jnp.ndarray, log_probs: jnp.ndarray, times: jnp.ndarray, rv_o
     
     # Plot corner plot
     _ = corner.corner(flat_samples.__array__(), labels=labels)
-    plt.savefig('hogg_corner.png')
+    plt.savefig(f'{filename}_corner.png')
     plt.show()
     
     # Plot RV curve with sampled curves and MAP estimate
@@ -309,7 +315,7 @@ def plots(samples: jnp.ndarray, log_probs: jnp.ndarray, times: jnp.ndarray, rv_o
     ax.set_title('Radial Velocity: Observed vs MAP Estimate', fontsize=14)
     
     plt.tight_layout()
-    plt.savefig('hogg_rv.png')
+    plt.savefig(f'{filename}_rv.png')
     plt.show()
 
 def initalize_sampler(method: str, total_chains: int, dim: int, log_prob: callable):
@@ -334,7 +340,7 @@ def initalize_sampler(method: str, total_chains: int, dim: int, log_prob: callab
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--method', type=str, choices=['hmc', 'hmc_walk', 'hmc_side', 'stretch', 'walk', 'side'], required=True)
+    parser.add_argument('--move', type=str, choices=['hmc', 'hmc_walk', 'hmc_side', 'stretch', 'walk', 'side'], required=True)
     return parser.parse_args()
 
 if __name__ == '__main__':
@@ -390,7 +396,7 @@ if __name__ == '__main__':
     num_samples = 60000
     thin_by = 4
     
-    sampler = initalize_sampler(args.method, total_chains, dim, log_prob)
+    sampler = initalize_sampler(args.move, total_chains, dim, log_prob)
 
     # Calculate initialization bounds as a fraction centered on true values
     coverage_fraction = 0.05 # sets fract of bounds that the inital samples are drawn from
@@ -498,4 +504,4 @@ if __name__ == '__main__':
 
     print('Plotting...')
     log_probs = sampler.get_logprob(discard=warmup, thin=thin_by)
-    plots(samples, log_probs, times, rv_obs, rv_err, n_planets=2)
+    plots(samples, log_probs, times, rv_obs, rv_err, n_planets=2, filename=f'multiple_planets_{args.move}')

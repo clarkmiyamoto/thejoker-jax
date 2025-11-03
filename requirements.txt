@@ -1,7 +1,6 @@
 jax
 jaxlib 
 distrax
-numpyro
 jaxoplanet
 fitsio
 sdss-access
