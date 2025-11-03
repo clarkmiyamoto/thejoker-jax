@@ -8,11 +8,9 @@ import jax
 import jax.numpy as jnp
 from jax.interpreters import ad
 
-from jaxoplanet.types import Array
-
 
 @jax.jit
-def kepler(M: Array, ecc: Array) -> tuple[Array, Array]:
+def kepler(M: jnp.ndarray, ecc: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
     """Solve Kepler's equation to compute the true anomaly
 
     Args:
@@ -26,7 +24,7 @@ def kepler(M: Array, ecc: Array) -> tuple[Array, Array]:
 
 
 @jax.custom_jvp
-def _kepler(M: Array, ecc: Array) -> tuple[Array, Array]:
+def _kepler(M: jnp.ndarray, ecc: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
     # Check for invalid eccentricity (must be in [0, 1])
     invalid_ecc = (ecc < 0) | (ecc > 1)
     
@@ -99,7 +97,7 @@ def _(primals, tangents):
     return (sinf, cosf), (cosf * f_dot, -sinf * f_dot)
 
 
-def starter(M: Array, ecc: Array, ome: Array) -> Array:
+def starter(M: jnp.ndarray, ecc: jnp.ndarray, ome: jnp.ndarray) -> jnp.ndarray:
     M2 = jnp.square(M)
     alpha = 3 * jnp.pi / (jnp.pi - 6 / jnp.pi)
     alpha += 1.6 / (jnp.pi - 6 / jnp.pi) * (jnp.pi - M) / (1 + ecc)
@@ -112,7 +110,7 @@ def starter(M: Array, ecc: Array, ome: Array) -> Array:
     return (2 * r * w / (jnp.square(w) + w * q + q2) + M) / d
 
 
-def refine(M: Array, ecc: Array, ome: Array, E: Array) -> Array:
+def refine(M: jnp.ndarray, ecc: jnp.ndarray, ome: jnp.ndarray, E: jnp.ndarray) -> jnp.ndarray:
     sE = E - jnp.sin(E)
     cE = 1 - jnp.cos(E)
 
